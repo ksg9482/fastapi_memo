@@ -39,13 +39,18 @@ Base.metadata.create_all(bind=engine) # 자동으로 테이블 생성
 
 # 메모 생성
 @app.post('/memos/')
-async def create_user(memo:MemoCreate, db:Session=Depends(get_db)): # Depends -> 의존성 주입
+async def create_memo(memo:MemoCreate, db:Session=Depends(get_db)): # Depends -> 의존성 주입
     new_memo = Memo(title=memo.title, content=memo.content)
     db.add(new_memo)
     db.commit()
     db.refresh(new_memo) # DB에 저장된 값을 읽으면 입력하지 않은 id도 반환 받을 수 있음
     return ({"id": new_memo.id, "title": new_memo.title, "content": new_memo.content})
 
+# 메모 조회
+@app.get('/memos/')
+async def list_memos(db:Session=Depends(get_db)):
+    memos = db.query(Memo).all() # 모든 memo 다 가져오기
+    return [{"id": memo.id, "title": memo.title, "content": memo.content} for memo in memos] #리스트 컴프리헨션으로 순회해서 리스트 추가
 
 
 @app.get('/')
