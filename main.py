@@ -29,7 +29,7 @@ class MemoUpdate(BaseModel): # memo update dto
     content: Optional[str] = None
 
 def get_db():
-    db = Session(bind=engine) # db 바인드
+    db = Session(bind=engine) # db 바인드. 같은 db 바인딩을 유지하기 위함
     try:
         yield db # 바인딩 된 db를 제공하고 다 끝나면 db 연결 종료.
     finally:
@@ -41,6 +41,8 @@ Base.metadata.create_all(bind=engine) # 자동으로 테이블 생성
 @app.post('/memos/')
 async def create_memo(memo:MemoCreate, db:Session=Depends(get_db)): # Depends -> 의존성 주입
     new_memo = Memo(title=memo.title, content=memo.content)
+
+    # 엔티티를 직접 다루는 것이 아니라, 엔티티를 db 엔진 (db 세션)에 넣어서 db 엔진을 조작해야 함.
     db.add(new_memo)
     db.commit()
     db.refresh(new_memo) # DB에 저장된 값을 읽으면 입력하지 않은 id도 반환 받을 수 있음
@@ -54,7 +56,7 @@ async def list_memos(db:Session=Depends(get_db)):
 
 #메모 수정
 @app.put('/memos/{memo_id}')
-async def create_memo(memo_id:int, memo:MemoUpdate, db:Session=Depends(get_db)):
+async def update_memo(memo_id:int, memo:MemoUpdate, db:Session=Depends(get_db)):
     db_memo = db.query(Memo).filter(Memo.id == memo_id).first() # 메모id가 같은 row만 필터링하고 그중 1개만 반환. findOne.
     #애초에 메모 검색 안되면 에러임
     if db_memo in None:
@@ -68,7 +70,21 @@ async def create_memo(memo_id:int, memo:MemoUpdate, db:Session=Depends(get_db)):
 
     db.commit() #변경된 레코드를 바로 커밋
     db.refresh(db_memo)
+
     return ({"id": db_memo.id, "title": db_memo.title, "content": db_memo.content})
+
+# 메모 삭제
+@app.delete('/memos/{memo_id}')
+async def delete_memo(memo_id:int, db:Session=Depends(get_db)): # Depends -> 의존성 주입
+    db_memo = db.query(Memo).filter(Memo.id == memo_id).first() # 메모id가 같은 row만 필터링하고 그중 1개만 반환. findOne.
+    if db_memo in None:
+        return ({"error": "Memo not found"})
+    
+    db.delete(db_memo)
+    db.commit()
+    
+    return ({"mesage": "Memo deleted"})
+
 
 @app.get('/')
 async def read_root(request: Request):
