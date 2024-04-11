@@ -1,18 +1,45 @@
-from fastapi import Depends, FastAPI, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session #DB 접속
 from sqlalchemy import create_engine, MetaData, Table, Column, Integer, String #DB 테이블 정의
 from sqlalchemy.ext.declarative import declarative_base
 from pydantic import BaseModel
 from typing import Optional
+from passlib.context import CryptContext
+from starlette.middleware.sessions import SessionMiddleware #세션 관리
 
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+def get_password_hash(password):
+    return pwd_context.hash(password)
+
+def verify_password(plain_password, hashed_password):
+    return pwd_context.verify(plain_password, hashed_password)
 
 app = FastAPI()
+session_secret = '1234567890'
+app.add_middleware(SessionMiddleware, secret_key=session_secret) # 세션 미들웨어 삽입
 templates = Jinja2Templates(directory="templates")
 
 DATABASE_URL = "mysql+pymysql://ksg:ksg@localhost/fastapi_memo"
 engine = create_engine(DATABASE_URL) # DB 접속
 Base = declarative_base() # 베이스 선언. sqlalchemy orm을 이용하기 위한 root 상속
+
+class User(Base):
+    __tablename__ = "users"
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String(100), unique=True, index=True)
+    email = Column(String(200))
+    hasd_password = Column(String(512))
+
+class UserCreate(BaseModel):
+    username: str
+    email: str
+    password: str # 해시 전 패스워드
+
+class UserLogin(BaseModel):
+    username: str
+    password: str
 
 class Memo(Base):
     __tablename__ = 'memo'
@@ -36,6 +63,37 @@ def get_db():
         db.close()
 
 Base.metadata.create_all(bind=engine) # 자동으로 테이블 생성
+
+# 회원가입
+@app.post('/signup')
+async def signup(signup_data: UserCreate, db: Session = Depends(get_db)):
+    hashed_password = get_password_hash(signup_data.password)
+    new_user = User(username=signup_data.username, email=signup_data.email, hasd_password=hashed_passwor )
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    return {"message": "Account created successfully", "user_id": new_user.id}
+
+# 로그인
+@app.post('/login')
+async def signup(request: Request, signin_data: UserLogin, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.username == signin_data.username).first()
+    if user and verify_password(signin_data.password, user.hasd_password):
+        request.session['username'] = user.username # 세션에 유저정보를 저장해서 세션을 통해 유저정보 관리
+        return {"message": "Logged in successfully"}
+    else:
+        raise HTTPException(status_code=401, detail="Invalid credentials") # 로그인 실패. 401:인증 오류
+
+# 로그아웃
+@app.post('/logout')
+async def logout(request: Request):
+    request.session.pop("username", None) # 세션에서 삽입한 username 제거
+    return {"message": "Logout successfully"}
+
+"""
+로그인 하면 쿠키값(세션키) 저장됨. 
+로그아웃 하면 전송된 쿠키값으로 세션 제거.
+"""
 
 # 메모 생성
 @app.post('/memos/')
