@@ -5,9 +5,20 @@ from sqlalchemy import create_engine, MetaData, Table, Column, Integer, String #
 from sqlalchemy.ext.declarative import declarative_base
 from pydantic import BaseModel
 from typing import Optional
+from passlib.context import CryptContext
+from starlette.middleware.sessions import SessionMiddleware #세션 관리
 
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+def get_password_hash(password):
+    return pwd_context.hash(password)
+
+def varify_password(plain_password, hashed_password):
+    return pwd_context.verify(plain_password, hashed_password)
 
 app = FastAPI()
+session_secret = '1234567890'
+app.add_middleware(SessionMiddleware, secret_key=session_secret) # 세션 미들웨어 삽입
 templates = Jinja2Templates(directory="templates")
 
 DATABASE_URL = "mysql+pymysql://ksg:ksg@localhost/fastapi_memo"
