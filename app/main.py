@@ -21,7 +21,7 @@ session_secret = '1234567890'
 app.add_middleware(SessionMiddleware, secret_key=session_secret) # 세션 미들웨어 삽입
 templates = Jinja2Templates(directory="templates")
 
-DATABASE_URL = "mysql+pymysql://ksg:ksg@localhost/fastapi_memo"
+DATABASE_URL = "mysql+pymysql://root:root@localhost/fastapi_memo"
 engine = create_engine(DATABASE_URL) # DB 접속
 Base = declarative_base() # 베이스 선언. sqlalchemy orm을 이용하기 위한 root 상속
 
@@ -68,7 +68,7 @@ Base.metadata.create_all(bind=engine) # 자동으로 테이블 생성
 @app.post('/signup')
 async def signup(signup_data: UserCreate, db: Session = Depends(get_db)):
     hashed_password = get_password_hash(signup_data.password)
-    new_user = User(username=signup_data.username, email=signup_data.email, hasd_password=hashed_passwor )
+    new_user = User(username=signup_data.username, email=signup_data.email, hasd_password=hashed_password )
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
@@ -114,8 +114,15 @@ async def list_memos(db:Session=Depends(get_db)):
 
 #메모 수정
 @app.put('/memos/{memo_id}')
-async def update_memo(memo_id:int, memo:MemoUpdate, db:Session=Depends(get_db)):
-    db_memo = db.query(Memo).filter(Memo.id == memo_id).first() # 메모id가 같은 row만 필터링하고 그중 1개만 반환. findOne.
+async def update_memo(request: Request, memo_id:int, memo:MemoUpdate, db:Session=Depends(get_db)):
+    username = request.session.get('username')
+    if username is None:
+        raise HTTPException(status_code=401, detail='Not authorized')
+    user = db.query(User).filter(User.username == username).first()
+    if user in None:
+        raise HTTPException(status_code=404, detail="User not Found")
+    
+    db_memo = db.query(Memo).filter(User.id == user.id, Memo.id == memo_id).first() # 메모id가 같은 row만 필터링하고 그중 1개만 반환. findOne.
     #애초에 메모 검색 안되면 에러임
     if db_memo in None:
         return ({"error": "Memo not found"})
@@ -129,11 +136,18 @@ async def update_memo(memo_id:int, memo:MemoUpdate, db:Session=Depends(get_db)):
     db.commit() #변경된 레코드를 바로 커밋
     db.refresh(db_memo)
 
-    return ({"id": db_memo.id, "title": db_memo.title, "content": db_memo.content})
+    return db_memo
 
 # 메모 삭제
 @app.delete('/memos/{memo_id}')
-async def delete_memo(memo_id:int, db:Session=Depends(get_db)): # Depends -> 의존성 주입
+async def delete_memo(request: Request, memo_id:int, db:Session=Depends(get_db)): # Depends -> 의존성 주입
+    username = request.session.get('username')
+    if username is None:
+        raise HTTPException(status_code=401, detail='Not authorized')
+    user = db.query(User).filter(User.username == username).first()
+    if user in None:
+        raise HTTPException(status_code=404, detail="User not Found")
+    
     db_memo = db.query(Memo).filter(Memo.id == memo_id).first() # 메모id가 같은 row만 필터링하고 그중 1개만 반환. findOne.
     if db_memo in None:
         return ({"error": "Memo not found"})
